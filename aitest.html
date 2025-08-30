@@ -62,6 +62,15 @@
         .chat-container::-webkit-scrollbar-track {
             background: transparent;
         }
+        .loading-dot {
+            animation: dot-animation 1s infinite;
+        }
+        .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dot-animation {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 1; }
+        }
     </style>
 </head>
 <body class="overflow-hidden">
@@ -90,11 +99,11 @@
             <div class="mt-auto pt-4 border-t border-gray-700">
                 <h3 class="text-lg font-semibold mb-2">Save/Load</h3>
                 <div class="space-y-2">
-                    <button id="export-btn" class="w-full bg-white bg-opacity-10 py-2 px-4 rounded-full hover:bg-opacity-20 transition-colors duration-200">
+                    <button id="export-btn" class="w-full py-2 px-4 rounded-full bg-white bg-opacity-10 hover:bg-opacity-20 transition-colors duration-200">
                         Export Chats
                     </button>
                     <input type="file" id="import-file" class="hidden" accept=".json">
-                    <button onclick="document.getElementById('import-file').click()" class="w-full bg-white bg-opacity-10 py-2 px-4 rounded-full hover:bg-opacity-20 transition-colors duration-200">
+                    <button onclick="document.getElementById('import-file').click()" class="w-full py-2 px-4 rounded-full bg-white bg-opacity-10 hover:bg-opacity-20 transition-colors duration-200">
                         Import Chats
                     </button>
                 </div>
@@ -140,9 +149,11 @@
 
     <!-- Pop-up Modals Container -->
     <div id="modals-container" class="fixed inset-0 flex justify-center items-center p-4 z-50 hidden">
+        <!-- Overlay -->
+        <div class="fixed inset-0 bg-black bg-opacity-50"></div>
 
         <!-- API Key Modal -->
-        <div id="api-key-modal" class="glass-modal p-8 max-w-sm w-full space-y-4 hidden">
+        <div id="api-key-modal" class="glass-modal p-8 max-w-sm w-full space-y-4 hidden z-50">
             <h2 class="text-2xl font-bold text-center">Enter Your API Key</h2>
             <p class="text-sm text-center opacity-70">This will be securely stored in your browser's cookies.</p>
             <input type="password" id="api-key-input" class="w-full p-3 rounded-md bg-gray-800 text-white placeholder-gray-500 input-glow" placeholder="Your API Key">
@@ -150,7 +161,7 @@
         </div>
 
         <!-- Name Modal -->
-        <div id="name-modal" class="glass-modal p-8 max-w-sm w-full space-y-4 hidden">
+        <div id="name-modal" class="glass-modal p-8 max-w-sm w-full space-y-4 hidden z-50">
             <h2 class="text-2xl font-bold text-center">What's Your Name?</h2>
             <p class="text-sm text-center opacity-70">We'll use this to personalize your experience.</p>
             <input type="text" id="name-input" class="w-full p-3 rounded-md bg-gray-800 text-white placeholder-gray-500 input-glow" placeholder="Your Name">
@@ -164,6 +175,7 @@
         let currentChatId = null;
         let chats = {};
         const MAX_COOKIE_SIZE = 4096; // 4KB
+        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
 
         // DOM elements
         const chatContainer = document.getElementById('chat-container');
@@ -370,20 +382,55 @@
         async function sendMessage() {
             const message = userInput.value.trim();
             if (!message || !currentChatId) return;
+            
+            const apiKey = getCookie('api_key');
+            if (!apiKey) {
+                alert("Please enter your API key to send messages.");
+                showApiKeyModal();
+                return;
+            }
 
-            // Add user message to chat history
+            // Add user message
             chats[currentChatId].push({ role: 'user', content: message });
             saveData();
             renderMessages();
             userInput.value = '';
 
-            // Simulate AI response
-            const aiMessage = { role: 'ai', content: `Sorry, I cannot access the API to provide a real response. Your message was: "${message}"` };
-            
-            // Add AI response to chat history
-            chats[currentChatId].push(aiMessage);
-            saveData();
+            // Add loading indicator
+            const loadingMessage = { role: 'ai', content: `<div class="flex items-center space-x-1"><span>Thinking</span><span class="loading-dot">.</span><span class="loading-dot">.</span><span class="loading-dot">.</span></div>` };
+            chats[currentChatId].push(loadingMessage);
             renderMessages();
+
+            try {
+                const response = await fetch(`${API_URL}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: message }] }],
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const aiResponseText = result?.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI.";
+                
+                // Replace loading message with actual response
+                chats[currentChatId].pop();
+                chats[currentChatId].push({ role: 'ai', content: aiResponseText });
+                saveData();
+                renderMessages();
+
+            } catch (error) {
+                console.error('Error sending message:', error);
+                // Remove loading message and add error message
+                chats[currentChatId].pop();
+                chats[currentChatId].push({ role: 'ai', content: `Error: Could not get a response. Please check your API key.` });
+                saveData();
+                renderMessages();
+            }
         }
 
         // Add event listener for Enter key
