@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Nexus Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Keyframes for Animations */
+        @keyframes blob {
+          0%, 100% {
+            transform: translate(0px, 0px) scale(1);
+          }
+          33% {
+            transform: translate(30vw, -50px) scale(1.1);
+          }
+          66% {
+            transform: translate(-20vw, 20px) scale(0.9);
+          }
+        }
+
+        @keyframes pulse-delay {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+        .animate-pulse-delay-0 { animation: pulse-delay 1.5s infinite; }
+        .animate-pulse-delay-100 { animation: pulse-delay 1.5s infinite 0.1s; }
+        .animate-pulse-delay-200 { animation: pulse-delay 1.5s infinite 0.2s; }
+
+        /* Tailwind custom classes using the keyframes */
+        .animate-blob {
+          animation: blob 7s infinite;
+        }
+
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+
+        /* Responsive adjustments for backdrop-filter blur */
+        .backdrop-blur-xl {
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+
+        /* Custom scrollbar for chat container */
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #525252;
+          border-radius: 4px;
+        }
+        .border-image-source-gradient {
+          border-image-source: linear-gradient(to right, #3b82f6, #06b6d4);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-black text-white font-inter antialiased overflow-hidden relative flex flex-col items-center justify-center p-4">
+    <!-- Background Orbs (Decorative) -->
+    <div class="absolute top-1/4 left-1/4 w-72 h-72 bg-neutral-700 rounded-full mix-blend-overlay filter blur-3xl opacity-15 animate-blob"></div>
+    <div class="absolute top-1/2 right-1/3 w-80 h-80 bg-neutral-600 rounded-full mix-blend-overlay filter blur-3xl opacity-15 animate-blob animation-delay-2000"></div>
+    <div class="absolute bottom-1/4 left-1/3 w-64 h-64 bg-neutral-500 rounded-full mix-blend-overlay filter blur-3xl opacity-15 animate-blob animation-delay-4000"></div>
+
+    <!-- Main Content Container -->
+    <div id="app-container" class="relative z-10 w-full max-w-4xl mx-auto">
+        <!-- Content will be rendered here by JavaScript -->
+    </div>
+
+    <!-- Modals and dynamic content will be added here -->
+    <div id="modals-container"></div>
+
+    <!-- API Key Modal (Initially Hidden) -->
+    <div id="api-key-modal" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="relative w-full max-w-sm mx-auto p-8 bg-neutral-900 bg-opacity-70 rounded-xl shadow-lg backdrop-filter backdrop-blur-xl border border-transparent border-t-2 border-r-2 border-l-2 border-image-slice-1 border-image-repeat-stretch border-image-source-gradient text-center">
+            <h2 class="text-2xl font-bold mb-4 text-white">Enter Your API Key</h2>
+            <p class="text-neutral-400 mb-6">This app requires a Google Gemini API key to function. Your key will be saved in your browser's local storage.</p>
+            <form id="api-key-form">
+                <input
+                    type="text"
+                    id="api-key-input"
+                    class="w-full p-3 rounded-lg bg-neutral-800 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-neutral-700 mb-4"
+                    placeholder="Paste your API key here"
+                    required
+                />
+                <button
+                    type="submit"
+                    class="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition duration-300 hover:scale-105"
+                >
+                    Save Key & Continue
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+        import { getFirestore, doc, setDoc, deleteDoc, collection, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+
+        // Constants and State
+        const API_KEY_STORAGE_KEY = 'gemini-api-key';
+        let API_KEY = null;
+        let API_URL = null;
+
+        const CHAT_NAME_MAX_LENGTH = 20;
+        
+        let db;
+        let userId = null;
+        let userName = '';
+        let chats = [];
+        let currentChatId = null;
+        let isLoading = false;
+        
+        const appContainer = document.getElementById('app-container');
+        const modalsContainer = document.getElementById('modals-container');
+        const apiKeyModal = document.getElementById('api-key-modal');
+
+        const personas = [
+            { name: 'Friendly Companion', instruction: 'You are a friendly and helpful companion. Your tone is warm, encouraging, and positive. You are enthusiastic about conversation.' },
+            { name: 'Creative Writer', instruction: 'You are an imaginative and inspiring creative writing partner. You are a source of new ideas and love to help with storytelling, poetry, and scripts.' },
+            { name: 'Code Assistant', instruction: 'You are a professional and knowledgeable coding assistant. You are precise, accurate, and focus on providing well-structured code and technical explanations.' },
+            { name: 'Study Buddy', instruction: 'You are a patient and knowledgeable study buddy. Your goal is to explain complex topics simply and clearly, breaking them down into easy-to-understand concepts.' }
+        ];
+
+        // --- Helper Functions ---
+
+        function truncateChatName(name) {
+            if (name.length > CHAT_NAME_MAX_LENGTH) {
+                return name.substring(0, CHAT_NAME_MAX_LENGTH) + '...';
+            }
+            return name;
+        }
+
+        function createIconSVG(path, size = 20) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('width', size);
+            svg.setAttribute('height', size);
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2');
+            svg.setAttribute('stroke-linecap', 'round');
+            svg.setAttribute('stroke-linejoin', 'round');
+            const pathElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            pathElement.setAttribute('d', path);
+            svg.appendChild(pathElement);
+            return svg;
+        }
+        
+        // --- Rendering Logic ---
+
+        function renderApiKeyModal() {
+            apiKeyModal.classList.remove('hidden');
+            document.getElementById('api-key-form').addEventListener('submit', saveApiKey);
+        }
+
+        function hideApiKeyModal() {
+            apiKeyModal.classList.add('hidden');
+        }
+        
+        function renderLoginScreen() {
+            appContainer.innerHTML = `
+                <div class="relative z-10 w-full max-w-sm mx-auto p-8 bg-neutral-900 bg-opacity-70 rounded-xl shadow-lg backdrop-filter backdrop-blur-xl border border-transparent border-t-2 border-r-2 border-l-2 border-image-slice-1 border-image-repeat-stretch border-image-source-gradient text-center">
+                    <div class="flex justify-center mb-6">
+                        <svg class="w-12 h-12 text-neutral-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V2a4 4 0 0 0-4 4v2a4 4 0 0 0 4 4z"/><path d="M22 10a4 4 0 0 0-4-4h-2a4 4 0 0 0-4 4v2h2l4 4 2-2zM4 10a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v2H12l-4 4-2-2z"/></svg>
+                    </div>
+                    <h2 class="text-2xl font-bold mb-4">Welcome to AI Nexus Chat</h2>
+                    <p class="text-neutral-400 mb-6">Please enter your name to begin your conversation.</p>
+                    <form id="name-form">
+                        <input
+                            type="text"
+                            id="name-input"
+                            class="w-full p-3 rounded-lg bg-neutral-800 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-neutral-700 mb-4"
+                            placeholder="Your Name"
+                            required
+                        />
+                        <button
+                            type="submit"
+                            class="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition duration-300 hover:scale-105"
+                        >
+                            Start Chat
+                        </button>
+                    </form>
+                </div>
+            `;
+            document.getElementById('name-form').addEventListener('submit', handleNameSubmit);
+        }
+
+        function renderChatApp() {
+            appContainer.innerHTML = `
+                <header class="flex items-center justify-between py-4 px-6 mb-4 bg-neutral-900 bg-opacity-70 rounded-xl shadow-lg backdrop-filter backdrop-blur-xl border border-neutral-700">
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-8 h-8 text-neutral-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V2a4 4 0 0 0-4 4v2a4 4 0 0 0 4 4z"/><path d="M22 10a4 4 0 0 0-4-4h-2a4 4 0 0 0-4 4v2h2l4 4 2-2zM4 10a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v2H12l-4 4-2-2z"/></svg>
+                        <h1 class="text-2xl font-bold text-white">AI Nexus Chat</h1>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <select id="chat-select" class="p-2 rounded-lg bg-neutral-800 text-white border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+                        <button id="new-chat-btn" class="p-2 bg-neutral-800 rounded-full text-white transition-colors hover:bg-neutral-700" title="New Chat">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                        </button>
+                        <button id="delete-chat-btn" class="p-2 bg-neutral-800 rounded-full text-white transition-colors hover:bg-neutral-700" title="Delete Current Chat">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                        </button>
+                    </div>
+                </header>
+                <section class="bg-neutral-900 bg-opacity-70 rounded-xl shadow-lg backdrop-filter backdrop-blur-xl p-6 flex flex-col h-[70vh] max-h-[70vh] border border-transparent border-t-4 border-l-4 border-r-4 border-image-slice-1 border-image-repeat-stretch border-image-source-gradient">
+                    <div id="chat-container" class="flex-grow overflow-y-auto mb-4 p-2 custom-scrollbar"></div>
+                    <form id="message-form" class="relative mt-auto">
+                        <input
+                            type="text"
+                            id="message-input"
+                            class="w-full p-4 pr-12 rounded-xl bg-neutral-800 text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-neutral-700"
+                            placeholder="Send a message..."
+                            required
+                        />
+                        <button type="submit" id="send-btn" class="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full text-white shadow-lg transition duration-300 hover:scale-110 focus:outline-none">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 19-3-8-8-3z"/><path d="M22 2 11 13"/></svg>
+                        </button>
+                    </form>
+                </section>
+                <footer class="text-center py-4 text-neutral-400 text-sm">
+                    <p>&copy; 2024 AI Nexus. User ID: <span id="user-id-display"></span>. All rights reserved.</p>
+                </footer>
+            `;
+            document.getElementById('new-chat-btn').addEventListener('click', renderCreateChatModal);
+            document.getElementById('delete-chat-btn').addEventListener('click', deleteChat);
+            document.getElementById('message-form').addEventListener('submit', handleSendMessage);
+            document.getElementById('chat-select').addEventListener('change', (e) => {
+                currentChatId = e.target.value;
+                renderChatHistory();
+            });
+            document.getElementById('user-id-display').textContent = userId;
+        }
+
+        function renderCreateChatModal() {
+            modalsContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div class="relative w-full max-w-sm mx-auto p-8 bg-neutral-900 bg-opacity-70 rounded-xl shadow-lg backdrop-filter backdrop-blur-xl border border-transparent border-t-2 border-r-2 border-l-2 border-image-slice-1 border-image-repeat-stretch border-image-source-gradient text-center">
+                        <button id="close-modal-btn" class="absolute top-4 right-4 text-neutral-400 hover:text-white transition-colors" title="Close">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+                        <h2 class="text-2xl font-bold mb-4 text-white">Create New Chat</h2>
+                        <form id="create-chat-form">
+                            <div class="mb-4 text-left">
+                                <label class="block text-neutral-400 mb-2">Select Persona</label>
+                                <select id="persona-select" class="w-full p-3 rounded-lg bg-neutral-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border border-neutral-700"></select>
+                            </div>
+                            <div class="mb-6 text-left">
+                                <label class="block text-neutral-400 mb-2">Initial Message</label>
+                                <textarea id="prompt-textarea" class="w-full p-3 rounded-lg bg-neutral-800 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-neutral-700" placeholder="Start your conversation with a message..." rows="4" required></textarea>
+                            </div>
+                            <button
+                                type="submit"
+                                class="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition duration-300 hover:scale-105"
+                            >
+                                Start Chat
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            const personaSelect = document.getElementById('persona-select');
+            personas.forEach(p => {
+                const option = document.createElement('option');
+                option.value = p.name;
+                option.textContent = p.name;
+                personaSelect.appendChild(option);
+            });
+            document.getElementById('close-modal-btn').addEventListener('click', () => modalsContainer.innerHTML = '');
+            document.getElementById('create-chat-form').addEventListener('submit', handleCreateChat);
+        }
+
+        function renderChatSelect() {
+            const chatSelect = document.getElementById('chat-select');
+            chatSelect.innerHTML = '';
+            chats.forEach(chat => {
+                const option = document.createElement('option');
+                option.value = chat.id;
+                option.textContent = truncateChatName(chat.name);
+                chatSelect.appendChild(option);
+            });
+            if (currentChatId) {
+                chatSelect.value = currentChatId;
+            }
+        }
+
+        function renderChatHistory() {
+            const chatContainer = document.getElementById('chat-container');
+            chatContainer.innerHTML = '';
+            const currentChat = chats.find(chat => chat.id === currentChatId);
+
+            if (!currentChat) {
+                if (chats.length === 0) {
+                    chatContainer.innerHTML = `<div class="text-center text-neutral-500 mt-20"><p class="text-lg text-white font-semibold">Hello ${userName}!</p><p class="text-neutral-400">Click the + button to create a new chat.</p></div>`;
+                } else {
+                    chatContainer.innerHTML = `<div class="text-center text-neutral-400 mt-20">Loading chats...</div>`;
+                }
+                return;
+            }
+
+            const history = JSON.parse(currentChat.history);
+            history.forEach(message => {
+                const messageEl = document.createElement('div');
+                messageEl.className = `flex items-start mb-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`;
+                const bubbleEl = document.createElement('div');
+                bubbleEl.className = `p-4 rounded-xl shadow-md max-w-[85%] border ${
+                    message.role === 'user'
+                      ? 'bg-neutral-800 text-white border-neutral-700'
+                      : 'bg-neutral-900 text-neutral-200 border-neutral-700'
+                }`;
+                bubbleEl.style.whiteSpace = 'pre-wrap';
+                bubbleEl.textContent = message.text;
+                messageEl.appendChild(bubbleEl);
+                chatContainer.appendChild(messageEl);
+            });
+
+            if (isLoading) {
+                const loadingEl = document.createElement('div');
+                loadingEl.className = "flex justify-start mb-4";
+                loadingEl.innerHTML = `
+                    <div class="bg-neutral-900 text-neutral-200 p-4 rounded-xl shadow-md max-w-[85%] flex items-center border border-neutral-700">
+                      <div class="flex space-x-1">
+                        <div class="w-2 h-2 rounded-full animate-pulse-delay-0 bg-blue-400"></div>
+                        <div class="w-2 h-2 rounded-full animate-pulse-delay-100 bg-cyan-400"></div>
+                        <div class="w-2 h-2 rounded-full animate-pulse-delay-200 bg-teal-400"></div>
+                      </div>
+                    </div>
+                `;
+                chatContainer.appendChild(loadingEl);
+            }
+
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // --- Event Handlers & Core Logic ---
+
+        function handleNameSubmit(e) {
+            e.preventDefault();
+            const nameInput = document.getElementById('name-input');
+            if (nameInput.value.trim()) {
+                userName = nameInput.value.trim();
+                renderChatApp();
+            }
+        }
+        
+        function saveApiKey(e) {
+            e.preventDefault();
+            const apiKeyInput = document.getElementById('api-key-input');
+            const newKey = apiKeyInput.value.trim();
+            if (newKey) {
+                localStorage.setItem(API_KEY_STORAGE_KEY, newKey);
+                API_KEY = newKey;
+                API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
+                hideApiKeyModal();
+                startApp();
+            }
+        }
+
+        async function generateChatName(userPrompt, aiResponse) {
+            try {
+                const prompt = `Based on the conversation, generate a short, descriptive title for the chat, no more than 5 words. Do not include quotes.
+                User: "${userPrompt}"
+                AI: "${aiResponse}"
+                Title:`;
+                const payload = {
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    systemInstruction: { parts: [{ text: "You are a chat titling assistant. Your only job is to provide a very short title based on the conversation history." }] }
+                };
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    console.error("Name generation API Error:", await response.json());
+                    return "Untitled Chat";
+                }
+
+                const result = await response.json();
+                const title = result.candidates?.[0]?.content?.parts?.[0]?.text.trim() || "Untitled Chat";
+                return title;
+            } catch (error) {
+                console.error("Name generation fetch error:", error);
+                return "Untitled Chat";
+            }
+        }
+
+        async function handleCreateChat(e) {
+            e.preventDefault();
+            const promptTextarea = document.getElementById('prompt-textarea');
+            const personaSelect = document.getElementById('persona-select');
+            const newChatPrompt = promptTextarea.value.trim();
+            const newChatPersona = personaSelect.value;
+            
+            if (!newChatPrompt || isLoading) return;
+
+            modalsContainer.innerHTML = '';
+            isLoading = true;
+            renderChatHistory(); 
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const newChatId = Date.now().toString();
+            const initialHistory = [{ role: 'user', text: newChatPrompt }];
+            const initialChatData = {
+                name: 'New Chat',
+                persona: newChatPersona,
+                history: JSON.stringify(initialHistory),
+            };
+
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', newChatId), initialChatData);
+                
+                const selectedPersonaInstruction = personas.find(p => p.name === newChatPersona)?.instruction || '';
+                const payload = {
+                    contents: initialHistory.map(msg => ({
+                        role: 'user',
+                        parts: [{ text: msg.text }]
+                    })),
+                    systemInstruction: { parts: [{ text: `You are chatting with a user named ${userName}. Use this information to personalize your responses. ${selectedPersonaInstruction}` }] }
+                };
+                
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    const errorHistory = [...initialHistory, { role: 'model', text: `Error: Failed to get a response.` }];
+                    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', newChatId), { ...initialChatData, history: JSON.stringify(errorHistory) });
+                    return;
+                }
+
+                const result = await response.json();
+                const modelResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (modelResponse) {
+                    const finalHistory = [...initialHistory, { role: 'model', text: modelResponse }];
+                    const chatName = await generateChatName(newChatPrompt, modelResponse);
+                    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', newChatId), { ...initialChatData, name: chatName, history: JSON.stringify(finalHistory) });
+                } else {
+                    const noResponseHistory = [...initialHistory, { role: 'model', text: "No response generated." }];
+                    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', newChatId), { ...initialChatData, history: JSON.stringify(noResponseHistory) });
+                }
+            } catch (error) {
+                console.error("Fetch or Firestore error:", error);
+                const errorHistory = [...initialHistory, { role: 'model', text: `Failed to connect to the AI or database: ${error.message}` }];
+                await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', newChatId), { ...initialChatData, history: JSON.stringify(errorHistory) });
+            } finally {
+                isLoading = false;
+                renderChatHistory();
+            }
+        }
+
+        async function handleSendMessage(e) {
+            e.preventDefault();
+            const messageInput = document.getElementById('message-input');
+            const input = messageInput.value.trim();
+            if (!input || isLoading || !currentChatId) return;
+
+            const currentChat = chats.find(c => c.id === currentChatId);
+            const newHistory = [...JSON.parse(currentChat.history), { role: 'user', text: input }];
+            
+            messageInput.value = '';
+            isLoading = true;
+            renderChatHistory();
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', currentChatId), { ...currentChat, history: JSON.stringify(newHistory) });
+                
+                const selectedPersonaInstruction = personas.find(p => p.name === currentChat.persona)?.instruction || '';
+                const payload = {
+                    contents: newHistory.map(msg => ({
+                        role: msg.role === 'user' ? 'user' : 'model',
+                        parts: [{ text: msg.text }]
+                    })),
+                    systemInstruction: { parts: [{ text: `You are chatting with a user named ${userName}. Use this information to personalize your responses. ${selectedPersonaInstruction}` }] }
+                };
+                
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    const errorHistory = [...newHistory, { role: 'model', text: `Error: Failed to get a response.` }];
+                    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', currentChatId), { ...currentChat, history: JSON.stringify(errorHistory) });
+                    return;
+                }
+
+                const result = await response.json();
+                const modelResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (modelResponse) {
+                    const finalHistory = [...newHistory, { role: 'model', text: modelResponse }];
+                    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', currentChatId), { ...currentChat, history: JSON.stringify(finalHistory) });
+                } else {
+                    const noResponseHistory = [...newHistory, { role: 'model', text: "No response generated. Please try again." }];
+                    await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', currentChatId), { ...currentChat, history: JSON.stringify(noResponseHistory) });
+                }
+            } catch (error) {
+                console.error("Fetch or Firestore error:", error);
+                const errorHistory = [...newHistory, { role: 'model', text: `Failed to connect to the AI service: ${error.message}` }];
+                await setDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', currentChatId), { ...currentChat, history: JSON.stringify(errorHistory) });
+            } finally {
+                isLoading = false;
+                renderChatHistory();
+            }
+        }
+
+        async function deleteChat() {
+            if (!currentChatId) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            try {
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', userId, 'chats', currentChatId));
+            } catch (error) {
+                console.error("Error deleting chat:", error);
+            }
+        }
+
+        // --- Firebase Initialization ---
+        async function initializeAuthAndDb() {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            db = getFirestore(app);
+
+            auth.onAuthStateChanged(async (user) => {
+                if (user) {
+                    userId = user.uid;
+                } else {
+                    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                    if (initialAuthToken) {
+                        try {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } catch (error) {
+                            console.error("Error signing in with custom token:", error);
+                            await signInAnonymously(auth);
+                        }
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                }
+                listenForChats();
+            });
+        }
+
+        function listenForChats() {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const chatsRef = collection(db, 'artifacts', appId, 'users', userId, 'chats');
+            const q = query(chatsRef);
+            
+            onSnapshot(q, (snapshot) => {
+                const fetchedChats = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                fetchedChats.sort((a, b) => a.id - b.id);
+                chats = fetchedChats;
+                
+                if (chats.length > 0 && !currentChatId) {
+                    currentChatId = chats[0].id;
+                } else if (chats.length > 0 && !chats.find(c => c.id === currentChatId)) {
+                    currentChatId = chats[0].id;
+                } else if (chats.length === 0) {
+                    currentChatId = null;
+                }
+                
+                renderChatSelect();
+                renderChatHistory();
+            });
+        }
+        
+        // Main application flow
+        function startApp() {
+            renderLoginScreen();
+            initializeAuthAndDb();
+        }
+
+        // Initial render on page load
+        window.onload = () => {
+            API_KEY = localStorage.getItem(API_KEY_STORAGE_KEY);
+            if (!API_KEY) {
+                renderApiKeyModal();
+            } else {
+                API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
+                startApp();
+            }
+        };
+
+    </script>
+</body>
+</html>
+
