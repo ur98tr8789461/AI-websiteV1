@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Chat App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: linear-gradient(135deg, #1e3a8a, #9333ea, #ec4899);
+      background-size: 300% 300%;
+      animation: gradientMove 15s ease infinite;
+    }
+    @keyframes gradientMove {
+      0% {background-position: 0% 50%;}
+      50% {background-position: 100% 50%;}
+      100% {background-position: 0% 50%;}
+    }
+    .glass {
+      backdrop-filter: blur(12px);
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .pulse {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #10b981; animation: pulseAnim 1.5s infinite;
+    }
+    @keyframes pulseAnim {
+      0%,100% {transform: scale(1);}
+      50% {transform: scale(1.4);}
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col text-white">
+
+  <!-- Header -->
+  <header class="glass flex justify-between items-center p-3">
+    <h1 id="chatTitle" class="font-bold text-lg">New Chat</h1>
+    <div class="flex gap-2">
+      <button onclick="toggleChatSwitcher()" class="px-2 py-1 rounded glass">Chats</button>
+      <button onclick="toggleSettings()" class="px-2 py-1 rounded glass">⚙️</button>
+    </div>
+  </header>
+
+  <!-- Chat messages -->
+  <main id="chatWindow" class="flex-1 overflow-y-auto p-4 space-y-3"></main>
+
+  <!-- Input -->
+  <div class="glass flex items-center p-2">
+    <input id="chatInput" placeholder="Type a message..." class="flex-1 p-2 rounded text-black">
+    <button onclick="sendMessage()" class="ml-2 px-3 py-2 rounded glass">Send</button>
+  </div>
+
+  <!-- Typing indicator -->
+  <div id="typingIndicator" class="hidden flex items-center gap-2 p-2">
+    <div class="pulse"></div>
+    <span>AI is typing...</span>
+  </div>
+
+  <!-- Chat switcher modal -->
+  <div id="chatSwitcher" class="fixed inset-0 hidden bg-black/60 flex items-center justify-center">
+    <div class="glass p-6 rounded-lg w-80">
+      <h2 class="font-bold text-lg mb-4">Chats</h2>
+      <ul id="chatList" class="space-y-2"></ul>
+      <button onclick="newChat()" class="mt-4 px-3 py-2 rounded glass w-full">+ New Chat</button>
+      <button onclick="toggleChatSwitcher()" class="mt-2 px-3 py-2 rounded glass w-full">Close</button>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="fixed inset-0 hidden bg-black/60 flex items-center justify-center">
+    <div class="glass p-6 rounded-lg w-80 space-y-4">
+      <h2 class="font-bold text-lg">Settings</h2>
+      <div>
+        <label class="block">Theme</label>
+        <select id="themeSelect" class="w-full p-2 rounded text-black">
+          <option value="default">Default</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+      <div>
+        <label class="block">Animations</label>
+        <input type="checkbox" id="animationToggle" checked>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="exportChats()" class="px-3 py-2 rounded glass w-full">Export</button>
+        <input type="file" id="importFile" class="hidden" onchange="importChats(event)">
+        <button onclick="document.getElementById('importFile').click()" class="px-3 py-2 rounded glass w-full">Import</button>
+      </div>
+      <button onclick="toggleSettings()" class="px-3 py-2 rounded glass w-full">Close</button>
+    </div>
+  </div>
+
+  <script>
+    let chats = JSON.parse(localStorage.getItem("chats") || "{}");
+    let currentChatId = null;
+    let settings = JSON.parse(localStorage.getItem("settings") || '{"theme":"default","animations":true}');
+
+    // Helpers
+    function save() {
+      localStorage.setItem("chats", JSON.stringify(chats));
+      localStorage.setItem("settings", JSON.stringify(settings));
+    }
+
+    function renderChat() {
+      const chat = chats[currentChatId] || {messages:[],title:"New Chat"};
+      document.getElementById("chatWindow").innerHTML = chat.messages.map(m => 
+        `<div class="${m.role==='user'?'text-right':''}">
+           <div class="inline-block glass px-3 py-2 rounded">${m.text}</div>
+         </div>`
+      ).join("");
+      document.getElementById("chatTitle").textContent = chat.title;
+    }
+
+    function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const text = input.value.trim();
+      if(!text) return;
+      chats[currentChatId].messages.push({role:"user",text});
+      renderChat();
+      input.value = "";
+      aiReply(text);
+    }
+
+    async function aiReply(userText) {
+      showTyping(true);
+      // fake AI delay
+      await new Promise(r=>setTimeout(r,1000));
+      const reply = "This is a simulated AI reply to: " + userText;
+      chats[currentChatId].messages.push({role:"ai",text:reply});
+      renderChat();
+      showTyping(false);
+      if(chats[currentChatId].messages.length===2){ generateTitle(); }
+      save();
+    }
+
+    function showTyping(show) {
+      document.getElementById("typingIndicator").classList.toggle("hidden",!show);
+    }
+
+    async function generateTitle() {
+      // fake API
+      const title = "Chat about " + chats[currentChatId].messages[0].text.slice(0,20);
+      chats[currentChatId].title = title;
+      save();
+      renderChatList();
+      renderChat();
+    }
+
+    function newChat() {
+      const id = Date.now().toString();
+      chats[id] = {title:"New Chat",messages:[]};
+      currentChatId = id;
+      save();
+      toggleChatSwitcher();
+      renderChat();
+    }
+
+    function renderChatList() {
+      const list = document.getElementById("chatList");
+      list.innerHTML = Object.entries(chats).map(([id,chat]) =>
+        `<li><button onclick="openChat('${id}')" class="w-full text-left glass px-2 py-1 rounded">${chat.title}</button></li>`
+      ).join("");
+    }
+
+    function openChat(id) {
+      currentChatId = id;
+      toggleChatSwitcher();
+      renderChat();
+    }
+
+    function toggleChatSwitcher() {
+      renderChatList();
+      document.getElementById("chatSwitcher").classList.toggle("hidden");
+    }
+
+    function toggleSettings() {
+      document.getElementById("settingsModal").classList.toggle("hidden");
+      document.getElementById("themeSelect").value = settings.theme;
+      document.getElementById("animationToggle").checked = settings.animations;
+    }
+
+    document.getElementById("themeSelect").addEventListener("change", e => {
+      settings.theme = e.target.value; applyTheme(); save();
+    });
+    document.getElementById("animationToggle").addEventListener("change", e => {
+      settings.animations = e.target.checked; applyAnimations(); save();
+    });
+
+    function applyTheme() {
+      if(settings.theme==="dark") document.body.classList.add("bg-black");
+      else document.body.classList.remove("bg-black");
+    }
+
+    function applyAnimations() {
+      document.body.style.animationPlayState = settings.animations?"running":"paused";
+    }
+
+    function exportChats() {
+      const blob = new Blob([JSON.stringify(chats)],{type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "chats.json";
+      a.click();
+    }
+
+    function importChats(e) {
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        chats = JSON.parse(ev.target.result);
+        save();
+        renderChatList();
+      };
+      reader.readAsText(file);
+    }
+
+    // Init
+    if(Object.keys(chats).length===0) newChat();
+    else currentChatId = Object.keys(chats)[0];
+    renderChat();
+    applyTheme(); applyAnimations();
+  </script>
+</body>
+</html>
