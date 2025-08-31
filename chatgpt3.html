@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Assistant</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Framer Motion CDN -->
+  <script src="https://unpkg.com/framer-motion/dist/framer-motion.umd.js"></script>
+
+  <!-- React + ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { motion } = window.framerMotion;
+
+    function App() {
+      const [userName, setUserName] = useState(localStorage.getItem('user_name') || '');
+      const [apiKey, setApiKey] = useState(localStorage.getItem('api_key') || '');
+      const [instructions, setInstructions] = useState(localStorage.getItem('instructions') || '');
+      const [showWelcome, setShowWelcome] = useState(!userName || !apiKey);
+
+      const saveSettings = () => {
+        localStorage.setItem('user_name', userName);
+        localStorage.setItem('api_key', apiKey);
+        localStorage.setItem('instructions', instructions);
+        setShowWelcome(false);
+      };
+
+      return (
+        <div className="h-screen flex flex-col items-center justify-center relative overflow-hidden">
+          {/* Pulsing Orb */}
+          <motion.div
+            className="w-6 h-6 rounded-full bg-blue-500 absolute top-4 right-4"
+            animate={{ scale: [1, 1.5, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          />
+
+          {/* Welcome Modal */}
+          {showWelcome && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+              <div className="bg-black bg-opacity-70 backdrop-blur-md rounded-xl p-8 w-full max-w-md space-y-4">
+                <h2 className="text-2xl font-bold text-center">Welcome!</h2>
+                <input
+                  type="text"
+                  placeholder="Your Name"
+                  className="w-full p-2 rounded bg-gray-800"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                />
+                <input
+                  type="password"
+                  placeholder="API Key"
+                  className="w-full p-2 rounded bg-gray-800"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <textarea
+                  placeholder="Custom Instructions"
+                  className="w-full p-2 rounded bg-gray-800"
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                />
+                <button
+                  className="w-full py-2 bg-blue-600 rounded hover:bg-blue-500 transition-colors"
+                  onClick={saveSettings}
+                >
+                  Save & Start Chatting
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Main Chat Area */}
+          {!showWelcome && (
+            <div className="flex flex-col w-full max-w-4xl h-full p-4">
+              <h1 className="text-xl font-bold mb-4">AI Assistant</h1>
+              {/* Add chat messages, input, sidebar here */}
+              <div className="flex-grow border rounded p-4 bg-gray-800 overflow-auto">
+                Chat messages will appear here
+              </div>
+              <input
+                type="text"
+                placeholder="Type a message..."
+                className="mt-4 p-2 rounded w-full bg-gray-700"
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
