@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Assistant</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #1a1a1a;
+    color: #f1f1f1;
+    overflow: hidden;
+}
+.gradient-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(-45deg, #0a0a0a, #333333, #0a0a0a, #222222);
+    background-size: 400% 400%;
+    animation: gradient-animation 15s ease infinite;
+    z-index: -1;
+}
+@keyframes gradient-animation {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+.glass-modal {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    animation: fadeIn 0.5s ease-out;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+.input-glow:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+.fade-in-up {
+    animation: fadeInUp 0.6s ease-out;
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.chat-container::-webkit-scrollbar {
+    width: 8px;
+}
+.chat-container::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+.chat-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+.loading-gradient {
+    background: linear-gradient(90deg, #4b5563, #374151, #4b5563);
+    background-size: 200% 200%;
+    animation: loading-gradient-animation 2s ease infinite;
+}
+@keyframes loading-gradient-animation {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+#pulsing-orb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #3b82f6;
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 50;
+}
+</style>
+</head>
+<body class="overflow-hidden">
+<div class="gradient-background"></div>
+
+<!-- Pulsing Orb -->
+<div id="pulsing-orb"></div>
+
+<!-- Main Container -->
+<div id="main-container" class="flex h-screen w-full relative p-4 lg:p-8 flex-col">
+
+    <!-- Sidebar (Chat Management) -->
+    <div id="sidebar" class="glass-modal w-80 p-4 lg:p-6 flex flex-col transition-all duration-300 transform -translate-x-full absolute top-4 left-4 lg:translate-x-0 lg:relative lg:top-0 lg:left-0 z-50 lg:z-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Chats</h2>
+            <button onclick="toggleSidebar()" class="lg:hidden text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <button onclick="newChat()" class="w-full bg-white bg-opacity-10 py-2 px-4 rounded-full mb-4 hover:bg-opacity-20 transition-colors duration-200">
+            + New Chat
+        </button>
+        <ul id="chat-list" class="flex-grow overflow-y-auto pr-2">
+        </ul>
+        <div class="mt-auto pt-4 border-t border-gray-700">
+            <h3 class="text-lg font-semibold mb-2">Save/Load</h3>
+            <div class="space-y-2">
+                <button id="export-btn" class="w-full py-2 px-4 rounded-full bg-white bg-opacity-10 hover:bg-opacity-20 transition-colors duration-200">
+                    Export Chats
+                </button>
+                <input type="file" id="import-file" class="hidden" accept=".json">
+                <button onclick="document.getElementById('import-file').click()" class="w-full py-2 px-4 rounded-full bg-white bg-opacity-10 hover:bg-opacity-20 transition-colors duration-200">
+                    Import Chats
+                </button>
+            </div>
+            <button onclick="animationsEnabled = !animationsEnabled; alert('Animations ' + (animationsEnabled ? 'enabled' : 'disabled'))" class="mt-4 w-full py-2 bg-gray-600 hover:bg-gray-500 rounded">Toggle Animations</button>
+            <button onclick="toggleChatSwitchModal()" class="mt-2 w-full py-2 bg-blue-600 hover:bg-blue-500 rounded">Switch Chat</button>
+        </div>
+    </div>
+
+    <!-- Main Chat Area -->
+    <div id="main-chat-area" class="flex-grow flex flex-col justify-end items-center transition-all duration-300">
+        <button onclick="toggleSidebar()" class="lg:hidden fixed top-6 left-6 z-50 bg-white bg-opacity-10 p-2 rounded-full hover:bg-opacity-20 transition-colors duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+        </button>
+
+        <div id="auth-info" class="flex-shrink-0 mb-4 text-center text-xs text-white opacity-50">
+            <span id="welcome-message"></span>
+            <button onclick="showWelcomeModal()" class="underline ml-1">Change</button>
+        </div>
+        
+        <div id="chat-title" class="text-xl font-bold mb-4 text-center">New Chat</div>
+
+        <div id="chat-container" class="w-full h-full max-w-4xl overflow-y-auto p-4 lg:p-8 flex-grow mb-4 flex flex-col-reverse min-h-0">
+        </div>
+        
+        <div id="input-container" class="w-full max-w-4xl p-4 glass-modal rounded-full flex items-center mb-8 z-10">
+            <input type="text" id="user-input" placeholder="Type a message..." class="flex-grow px-4 py-2 bg-transparent text-white placeholder-gray-400 focus:outline-none">
+            <button onclick="sendMessage()" class="bg-white bg-opacity-20 p-2 rounded-full ml-4 hover:bg-opacity-30 transition-colors duration-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<div id="modals-container" class="fixed inset-0 flex justify-center items-center p-4 z-50 hidden">
+    <div class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-md hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Welcome Modal -->
+    <div id="welcome-modal" class="glass-modal p-8 max-w-sm w-full space-y-4 hidden z-50">
+        <h2 class="text-2xl font-bold text-center">Welcome!</h2>
+        <p class="text-sm text-center opacity-70">Please enter your name and API key to begin. This information will be stored securely in your browser.</p>
+        <div id="error-message" class="text-red-400 text-sm text-center hidden">
+            Please enter both a name and a valid API key.
+        </div>
+        <div>
+            <label for="name-input" class="block text-sm font-medium mb-1">Your Name</label>
+            <input type="text" id="name-input" class="w-full p-3 rounded-md bg-gray-800 text-white placeholder-gray-500 input-glow" placeholder="Your Name">
+        </div>
+        <div>
+            <label for="api-key-input" class="block text-sm font-medium mb-1">Gemini API Key</label>
+            <input type="password" id="api-key-input" class="w-full p-3 rounded-md bg-gray-800 text-white placeholder-gray-500 input-glow" placeholder="Your API Key">
+        </div>
+        <div>
+            <label for="instructions-input" class="block text-sm font-medium mb-1">Custom AI Instructions (Optional)</label>
+            <textarea id="instructions-input" class="w-full p-3 rounded-md bg-gray-800 text-white placeholder-gray-500 input-glow resize-none" rows="3" placeholder="e.g., You are a friendly, helpful assistant named Gemini."></textarea>
+        </div>
+        <button onclick="saveAndDismissWelcomeModal()" class="w-full py-3 rounded-md bg-white text-black font-semibold hover:bg-gray-200 transition-colors duration-200">Save & Start Chatting</button>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" class="glass-modal p-6 max-w-xs w-full space-y-4 hidden z-50">
+        <p id="confirm-message" class="text-center"></p>
+        <div class="flex justify-center space-x-4">
+            <button id="confirm-no" class="px-4 py-2 rounded-full bg-gray-600 hover:bg-gray-
